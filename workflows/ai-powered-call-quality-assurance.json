@@ -1,0 +1,800 @@
+{
+  "name": "AI-powered Call Quality Assurance",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "CALLS"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1552,
+        0
+      ],
+      "id": "a99913fd-613e-4063-b92b-2454c1ad66f7",
+      "name": "Google Drive Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4ae70ed2-1781-4974-8e2f-67dce3655cad",
+              "leftValue": "={{ $json.name.toLowerCase() }}",
+              "rightValue": "\\.(mp3|wav|m4a)$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1088,
+        0
+      ],
+      "id": "e428e652-1b4f-44a5-8aa2-87f4b59a6079",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "'1CwyAs2dRl6xkufIpl1t7bpRK2V953d_h' in parents and trashed = false",
+        "returnAll": true,
+        "filter": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1344,
+        0
+      ],
+      "id": "646da091-bff2-43f4-8940-fc678134dfe8",
+      "name": "Search files and folders",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -880,
+        -96
+      ],
+      "id": "da178da3-d7dd-4ab6-a8e3-8f310756ef8d",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sourceType": "file",
+        "options": {
+          "diarize": true,
+          "language": "uk"
+        }
+      },
+      "type": "n8n-nodes-deepgram.deepgramTranscriber",
+      "typeVersion": 1,
+      "position": [
+        -736,
+        -96
+      ],
+      "id": "6a45c334-cacd-4702-83f4-fb983c869044",
+      "name": "Deepgram Transcriber",
+      "credentials": {
+        "deepgramApi": {
+          "id": "",
+          "name": "Deepgram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\n\nreturn {\n  json: {\n    fileId: item.id,\n    fileName: item.name,\n    transcript:\n      item.deepgramTranscription?.results?.channels?.[0]\n        ?.alternatives?.[0]?.transcript ?? '',\n    confidence:\n      item.deepgramTranscription?.results?.channels?.[0]\n        ?.alternatives?.[0]?.confidence ?? 0,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        -96
+      ],
+      "id": "ca3e8f82-2282-4e66-a34d-b782b50c3725",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Проанализируй звонок службы поддержки по критериям QA.\n\nНазвание файла: {{ $json.fileName }}\n\nТранскрипция разговора:\n{{ $json.transcript }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Ты — старший QA-аналитик службы поддержки. Анализируй только предоставленную транскрипцию. Не выдумывай факты. Оценивай действия агента, а не клиента.\n\nОцени 8 критериев по шкале от 1 до 5:\n1. **Greetings** — представился ли агент, назвал ли компанию и цель звонка.\n2. **Active Listening** — выслушивал ли клиента и подтверждал ли понимание.\n3. **Needs Discovery** — задавал ли уточняющие вопросы и выяснил ли проблему.\n4. **Empathy** — признавал ли эмоции клиента и проявлял ли понимание.\n5. **Expert Knowledge** — демонстрировал ли знание продукта, процессов и политик.\n6. **Clear Solution** — предложил ли конкретное решение проблемы.\n7. **Next Steps** — объяснил ли дальнейшие действия, ответственного и сроки.\n8. **End of Talk / Customer Satisfaction** — проверил ли решение вопроса и удовлетворённость клиента.\n\nШкала: 1 — очень плохо, 2 — плохо, 3 — удовлетворительно, 4 — хорошо, 5 — отлично. Если информации недостаточно, не додумывай её; поставь обоснованную оценку и укажи ограничение в комментарии.\n\nВерни результат в JSON со следующими полями:\n- overall_score: число от 1 до 5 — среднее арифметическое оценок восьми критериев, округлённое до одного знака;\n- rating_band: Good для оценки от 4 до 5, Fair для оценки от 3 до менее 4, Poor для оценки ниже 3;\n- positive_feedback: строка с сильными сторонами;\n- negative_feedback: строка с зонами улучшения;\n- greetings_score, greetings_comment;\n- active_listening_score, active_listening_comment;\n- needs_discovery_score, needs_discovery_comment;\n- empathy_score, empathy_comment;\n- expert_knowledge_score, expert_knowledge_comment;\n- clear_solution_score, clear_solution_comment;\n- next_steps_score, next_steps_comment;\n- end_of_talk_score, end_of_talk_comment.\n\nВсе оценки должны быть числами, комментарии — строками. Не добавляй Markdown и текст вне JSON.S"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -352,
+        -96
+      ],
+      "id": "a68f25da-b131-48a3-9360-637bf5308f3f",
+      "name": "AI Agent",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        112
+      ],
+      "id": "1dd6e51d-e85a-45c9-a93d-228ec95e83b7",
+      "name": "Google Gemini Chat Model",
+      "notesInFlow": false,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"overall_score\": 1.5,\n  \"rating_band\": \"Poor\",\n  \"positive_feedback\": \"Агент визначив замовлення та повідомив статус повернення.\",\n  \"negative_feedback\": \"Агент не проявив достатньої емпатії та не запропонував ефективного рішення.\",\n  \"greetings_score\": 1,\n  \"greetings_comment\": \"Агент не привітався та не представився.\",\n  \"active_listening_score\": 2,\n  \"active_listening_comment\": \"Агент не врахував попередні звернення клієнта.\",\n  \"needs_discovery_score\": 2,\n  \"needs_discovery_comment\": \"Агент не поставив уточнювальних запитань.\",\n  \"empathy_score\": 1,\n  \"empathy_comment\": \"Агент не визнав роздратування клієнта.\",\n  \"expert_knowledge_score\": 2,\n  \"expert_knowledge_comment\": \"Агент не пояснив, як вирішити проблему.\",\n  \"clear_solution_score\": 1,\n  \"clear_solution_comment\": \"Конкретного рішення не запропоновано.\",\n  \"next_steps_score\": 2,\n  \"next_steps_comment\": \"Наступні дії описані недостатньо чітко.\",\n  \"end_of_talk_score\": 1,\n  \"end_of_talk_comment\": \"Агент не перевірив задоволеність клієнта.\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -176,
+        112
+      ],
+      "id": "d4d29a3f-fde4-4ceb-bebe-a9d4ae5399a9",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_ID",
+          "mode": "list",
+          "cachedResultName": "Customer Calls Feedback"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Feedback"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now.toISODate() }}",
+            "Overall Score": "={{ $json.output.overall_score }}",
+            "Agent Name": "Не визначено",
+            "Rating Band": "={{ $json.output.rating_band }}",
+            "Positive Feedback": "={{ $json.output.positive_feedback }}",
+            "Negative Feedback": "={{ $json.output.negative_feedback }}",
+            "Greetings": "={{ $json.output.greetings_score }}",
+            "Feedback - Greetings": "={{ $json.output.greetings_comment }}",
+            "Active Listening": "={{ $json.output.active_listening_score }}",
+            "Feedback - Active Listening": "={{ $json.output.active_listening_comment }}",
+            "Needs Discovery": "={{ $json.output.needs_discovery_score }}",
+            "Feedback - Needs Discovery": "={{ $json.output.needs_discovery_comment }}",
+            "Empathy": "={{ $json.output.empathy_score }}",
+            "Feedback - Empathy": "={{ $json.output.empathy_comment }}",
+            "Expert Knowledge": "={{ $json.output.expert_knowledge_score }}",
+            "Feedback - Expert Knowledge": "={{ $json.output.expert_knowledge_comment }}",
+            "Clear Solution": "={{ $json.output.clear_solution_score }}",
+            "Feedback - Clear Solution": "={{ $json.output.clear_solution_comment }}",
+            "Next Steps": "={{ $json.output.next_steps_score }}",
+            "Feedback - Next Steps": "={{ $json.output.next_steps_comment }}",
+            "End of Talk Customer Satisfaction": "={{ $json.output.end_of_talk_score }}",
+            "Feedback - End of Talk Customer Satisfaction": "={{ $json.output.end_of_talk_comment }}",
+            "Cancel/Refund Threat": "={{ $json.output.negative_feedback }}",
+            "Comment": "={{ $json.output.negative_feedback }}",
+            "Cancel/Refund Category": "Возврат средств",
+            "Transcript": "={{ $('Code in JavaScript').item.json.transcript }}",
+            "agent_name": "Не визначено",
+            "score": "={{ $json.output.overall_score }}",
+            "summary": "={{ $json.output.positive_feedback }}",
+            "feedback_text": "={{ $json.output.negative_feedback }}",
+            "scores_json": "={{ JSON.stringify($json.output) }}",
+            "file_name": "={{ $('Code in JavaScript').item.json.fileName }}",
+            "file_url": "={{ \"https://drive.google.com/file/d/\" + $('Code in JavaScript').item.json.fileId + \"/view\" }}",
+            "created_at": "={{ $now.toISO() }}",
+            "transcription": "={{ $('Code in JavaScript').item.json.transcript }}",
+            "Call Recording URL": "={{ \"https://drive.google.com/file/d/\" + $('Code in JavaScript').item.json.fileId + \"/view\" }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Agent Name",
+              "displayName": "Agent Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Overall Score",
+              "displayName": "Overall Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rating Band",
+              "displayName": "Rating Band",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Positive Feedback",
+              "displayName": "Positive Feedback",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Negative Feedback",
+              "displayName": "Negative Feedback",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Greetings",
+              "displayName": "Greetings",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Greetings",
+              "displayName": "Feedback - Greetings",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Active Listening",
+              "displayName": "Active Listening",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Active Listening",
+              "displayName": "Feedback - Active Listening",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Needs Discovery",
+              "displayName": "Needs Discovery",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Needs Discovery",
+              "displayName": "Feedback - Needs Discovery",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Empathy",
+              "displayName": "Empathy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Empathy",
+              "displayName": "Feedback - Empathy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Expert Knowledge",
+              "displayName": "Expert Knowledge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Expert Knowledge",
+              "displayName": "Feedback - Expert Knowledge",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Clear Solution",
+              "displayName": "Clear Solution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Clear Solution",
+              "displayName": "Feedback - Clear Solution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Next Steps",
+              "displayName": "Next Steps",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - Next Steps",
+              "displayName": "Feedback - Next Steps",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "End of Talk Customer Satisfaction",
+              "displayName": "End of Talk Customer Satisfaction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Feedback - End of Talk Customer Satisfaction",
+              "displayName": "Feedback - End of Talk Customer Satisfaction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cancel/Refund Threat",
+              "displayName": "Cancel/Refund Threat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Comment",
+              "displayName": "Comment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Cancel/Refund Category",
+              "displayName": "Cancel/Refund Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Call Recording URL",
+              "displayName": "Call Recording URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Transcript",
+              "displayName": "Transcript",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "agent_name",
+              "displayName": "agent_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "feedback_text",
+              "displayName": "feedback_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scores_json",
+              "displayName": "scores_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "file_name",
+              "displayName": "file_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "file_url",
+              "displayName": "file_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "transcription",
+              "displayName": "transcription",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        0,
+        -96
+      ],
+      "id": "d38090e7-a502-4e55-be3e-37f408141015",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "08965f76-1b6c-4136-af08-5b3e8d43e41d",
+              "leftValue": "={{ Number($json[\"Overall Score\"]) }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        208,
+        -96
+      ],
+      "id": "c2f29f7a-e944-4eb6-90dd-0b577becf04d",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🚨 **ПЛОХОЙ ЗВОНОК — QA**\n\n📁 Файл: {{ $json[\"file_name\"] }}\n📊 Оценка: {{ $json[\"Overall Score\"] }}/5\n🔴 Статус: {{ $json[\"Rating Band\"] }}\n\n❌ Основные ошибки:\n{{ $json[\"Negative Feedback\"] }}\n\n🔗 Запись звонка:\n{{ $json[\"Call Recording URL\"] }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        -192
+      ],
+      "id": "c86bfc5b-7709-4bd0-89d6-5407f294c867",
+      "name": "Send a text message",
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "ReportingBot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Deepgram Transcriber",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deepgram Transcriber": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "nodeGroups": []
+}
